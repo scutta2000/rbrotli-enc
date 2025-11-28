@@ -3,7 +3,7 @@ This repository contains a fast Rust implementation of a Brotli encoder.
 
 The code is divided in multiple crates:
 
- - `bounded-utils`, `safe-arch`, `lsb-bitwriter` and `hugepage-buffer` contain
+ - `bounded-utils`, `lsb-bitwriter` and `hugepage-buffer` contain
    code that is meant to be usable by other libraries. They provide safe
    abstractions that help implementing high performance code.
  - `lib` contains the main encoder library. It is entirely written using safe

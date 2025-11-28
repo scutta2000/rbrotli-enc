@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::safe_arch;
-use bounded_utils::{BoundedSlice, BoundedU32, BoundedU8, BoundedUsize};
+use safe_arch_macro::safe_arch;
 use std::{arch::x86_64::*, marker::PhantomData};
 use zerocopy::{AsBytes, FromBytes};
+
+use crate::bounded_values::{BoundedSlice, BoundedU32, BoundedU8, BoundedUsize};
 
 const AVX_VECTOR_SIZE: usize = 32;
 

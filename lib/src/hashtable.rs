@@ -14,12 +14,12 @@
 
 use crate::compress::MetablockData;
 use crate::constants::*;
+use bounded_utils::safe_x86_64;
 use bounded_utils::{
     bounded_u8_array, BoundedIterable, BoundedSlice, BoundedU32, BoundedU8, BoundedUsize,
 };
 use hugepage_buffer::BoxedHugePageArray;
-use safe_arch::safe_arch;
-use safe_arch::x86_64 as safe_x86_64;
+use safe_arch_macro::safe_arch;
 use std::arch::x86_64::*;
 use zerocopy::FromZeroes;
 
@@ -898,7 +898,7 @@ mod test {
     };
     use crate::constants::*;
     use bounded_utils::{BoundedSlice, BoundedU8};
-    use safe_arch::safe_arch_entrypoint;
+    use safe_arch_macro::safe_arch_entrypoint;
     use std::arch::x86_64::{_mm256_extract_epi32, _mm256_set1_epi32};
 
     #[test]

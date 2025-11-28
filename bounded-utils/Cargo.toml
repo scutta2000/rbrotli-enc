@@ -8,6 +8,10 @@ edition = "2021"
 [dependencies]
 paste = "1.0.14"
 zerocopy = { version = "0.7.32", features = ["derive"] }
+safe-arch-macro = { path = "../safe-arch-macro" }
+
+[features]
+stable-compat = ["safe-arch-macro/stable-compat"]
 
 [lints]
 workspace = true

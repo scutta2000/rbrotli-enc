@@ -21,11 +21,11 @@ use crate::{
     },
     metablock::{self, ContextMode},
 };
+use bounded_utils::safe_x86_64;
 use bounded_utils::{BoundedIterable, BoundedSlice, BoundedU8, BoundedUsize};
 use hugepage_buffer::BoxedHugePageArray;
 use lsb_bitwriter::BitWriter;
-use safe_arch::x86_64 as safe_x86_64;
-use safe_arch::{safe_arch, safe_arch_entrypoint};
+use safe_arch_macro::{safe_arch, safe_arch_entrypoint};
 use std::arch::x86_64::*;
 use std::mem::MaybeUninit;
 use zerocopy::{transmute, transmute_mut, AsBytes, FromZeroes};
@@ -67,7 +67,7 @@ pub struct MetablockData {
 }
 
 #[target_feature(enable = "sse,sse2,sse3,ssse3,sse4.1,sse4.2,avx,avx2")]
-#[safe_arch::safe_arch]
+#[safe_arch]
 fn histogram_distance(a: &LiteralHistogram, b: &LiteralHistogram) -> i32 {
     if a.total == 0 || b.total == 0 {
         return 0;
@@ -122,7 +122,7 @@ fn histogram_distance(a: &LiteralHistogram, b: &LiteralHistogram) -> i32 {
 
 #[inline(never)]
 #[target_feature(enable = "sse,sse2,sse3,ssse3,sse4.1,sse4.2,avx,avx2")]
-#[safe_arch::safe_arch]
+#[safe_arch]
 fn cluster_histograms(histograms: &[LiteralHistogram; 64]) -> (Vec<LiteralHistogram>, [u8; 64]) {
     let mut used = [false; 64];
     let mut cmap = [0; 64];

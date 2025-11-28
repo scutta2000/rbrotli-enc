@@ -13,9 +13,9 @@
 // limitations under the License.
 
 use crate::constants::*;
+use bounded_utils::safe_x86_64;
 use bounded_utils::{BoundedSlice, BoundedUsize};
-use safe_arch::safe_arch;
-use safe_arch::x86_64 as safe_x86_64;
+use safe_arch_macro::safe_arch;
 use std::arch::x86_64::*;
 
 const INS_BASE: [u32; 24] = [
@@ -445,11 +445,9 @@ mod test {
         insert_len_to_sym_and_bits_simd,
     };
     use crate::constants::*;
-    use bounded_utils::{BoundedSlice, BoundedUsize};
-    use safe_arch::{
-        safe_arch_entrypoint,
-        x86_64::{_mm256_load, _mm256_store},
-    };
+    use bounded_utils::{safe_x86_64, BoundedSlice, BoundedUsize};
+    use safe_arch_macro::safe_arch_entrypoint;
+    use safe_x86_64::{_mm256_load, _mm256_store};
 
     fn get_nbits(mut nbits_pat: u64, mut nbits_count: u32) -> u64 {
         let mut nbits = 0;
