@@ -16,7 +16,7 @@ use safe_arch_macro::safe_arch;
 use std::{arch::x86_64::*, marker::PhantomData};
 use zerocopy::{AsBytes, FromBytes};
 
-use crate::bounded_values::{BoundedSlice, BoundedU32, BoundedU8, BoundedUsize};
+use crate::{BoundedSlice, BoundedU32, BoundedU8, BoundedUsize};
 
 const AVX_VECTOR_SIZE: usize = 32;
 

@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC
+// Copyright 2025 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,20 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! This crate contains types to represent slices whose length is guaranteed to be at least as much
-//! as a compile-time defined constant, as well as unsigned integers that are guaranteed to not
-//! exceed a certain compile-time value.
-#![allow(clippy::let_unit_value)]
-
-#[macro_use]
-mod make_bounded_type;
-
-mod bounded_iterator;
-mod bounded_slice;
-mod bounded_usize;
-mod utils;
-
-pub mod safe_x86_64;
-pub use bounded_iterator::*;
-pub use bounded_slice::*;
-pub use bounded_usize::*;
+pub struct CheckBound<const N: usize, const M: usize, const ADD: usize>;
+impl<const N: usize, const M: usize, const ADD: usize> CheckBound<N, M, ADD> {
+    pub const CHECK_GT: () = assert!((N as u128) > (M as u128 + ADD as u128));
+    pub const CHECK_GE: () = assert!((N as u128) >= (M as u128 + ADD as u128));
+}
