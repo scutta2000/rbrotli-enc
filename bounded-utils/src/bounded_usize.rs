@@ -12,12 +12,124 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// use crate::make_bounded_type::make_bounded_type;
-use crate::make_bounded_type::CheckPow2MinusOne;
 use crate::utils::CheckBound;
 use std::ops::{BitAnd, BitOr};
 
 use zerocopy::{AsBytes, FromZeroes};
+
+const _: () = assert!(std::mem::size_of::<usize>() < std::mem::size_of::<u128>());
+
+pub struct CheckPow2MinusOne<const VAL: usize> {}
+
+impl<const VAL: usize> CheckPow2MinusOne<VAL> {
+    pub const IS_POW2_MINUS_ONE: () = assert!((VAL as u128 + 1).is_power_of_two());
+}
+
+macro_rules! make_bounded_type {
+    ($d:tt, $BoundedType:ident, $array_macro:ident, $ty:ident) => {
+        /// A struct containing a `$ty` guaranteed to be smaller than `MAX`.
+        // Invariant: self.0 <= MAX.
+        #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug, AsBytes, FromZeroes)]
+        #[repr(transparent)]
+        pub struct $BoundedType<const MAX: usize>($ty);
+
+        impl<const MAX: usize> $BoundedType<MAX> {
+            pub const MAX: Self = $BoundedType(MAX as $ty);
+
+            /// Constructs a new $BoundedType without checking that the bound
+            /// is indeed satisfied.
+            ///
+            /// # Safety
+            /// `val` must be less than or equal to `MAX`.
+            pub const unsafe fn new_unchecked(val: $ty) -> $BoundedType<MAX> {
+                const _CHECK_TYPE_SIZE: () =
+                    assert!(std::mem::size_of::<$ty>() <= std::mem::size_of::<usize>());
+                debug_assert!((val as usize) <= MAX);
+                $BoundedType(val)
+            }
+
+            pub const fn new(val: $ty) -> Option<$BoundedType<MAX>> {
+                if (val as usize) <= MAX {
+                    const _CHECK_TYPE_SIZE: () =
+                        assert!(std::mem::size_of::<$ty>() <= std::mem::size_of::<usize>());
+                    Some($BoundedType(val))
+                } else {
+                    None
+                }
+            }
+
+            pub const fn new_masked(val: $ty) -> $BoundedType<MAX> {
+                let _ = CheckPow2MinusOne::<MAX>::IS_POW2_MINUS_ONE;
+                $BoundedType(val & (MAX as $ty))
+            }
+
+            pub const fn constant<const VAL: usize>() -> $BoundedType<MAX> {
+                let _ = CheckBound::<{ $ty::MAX as usize }, VAL, 0>::CHECK_GE;
+                let _ = CheckBound::<MAX, VAL, 0>::CHECK_GE;
+                $BoundedType(VAL as $ty)
+            }
+
+            pub const fn get(&self) -> $ty {
+                self.0
+            }
+
+            pub const fn tighten<const NEW_BOUND: usize>(&self) -> Option<$BoundedType<NEW_BOUND>> {
+                if (self.0 as usize) <= NEW_BOUND {
+                    Some($BoundedType(self.0))
+                } else {
+                    None
+                }
+            }
+
+            pub fn sub<const NEW_BOUND: usize, const SUB: usize>(
+                &self,
+            ) -> Option<$BoundedType<NEW_BOUND>> {
+                let _ = CheckBound::<MAX, NEW_BOUND, SUB>::CHECK_GE;
+                let _ = CheckBound::<{ $ty::MAX as usize }, SUB, 0>::CHECK_GE;
+                self.0.checked_sub(SUB as $ty).map(|x| $BoundedType(x))
+            }
+
+            pub const fn widen<const NEW_BOUND: usize>(&self) -> $BoundedType<NEW_BOUND> {
+                let _ = CheckBound::<NEW_BOUND, MAX, 0>::CHECK_GE;
+                $BoundedType(self.0)
+            }
+
+            pub const fn add<const NEW_BOUND: usize, const ADD: usize>(
+                &self,
+            ) -> $BoundedType<NEW_BOUND> {
+                let _ = CheckBound::<NEW_BOUND, MAX, ADD>::CHECK_GE;
+                $BoundedType(self.0 + ADD as $ty)
+            }
+
+            pub const fn mod_add(&self, val: $ty) -> $BoundedType<MAX> {
+                $BoundedType(((self.0 as usize + val as usize) % (MAX + 1)) as $ty)
+            }
+        }
+
+        impl<const MAX: usize> BitOr for $BoundedType<MAX> {
+            type Output = $BoundedType<MAX>;
+            fn bitor(self, rhs: Self) -> Self::Output {
+                let _ = CheckPow2MinusOne::<MAX>::IS_POW2_MINUS_ONE;
+                $BoundedType(self.0 | rhs.0)
+            }
+        }
+
+        impl<const MAX: usize> BitAnd for $BoundedType<MAX> {
+            type Output = $BoundedType<MAX>;
+            fn bitand(self, rhs: Self) -> Self::Output {
+                $BoundedType(self.0 & rhs.0)
+            }
+        }
+
+#[rustfmt::skip]
+        #[macro_export]
+        macro_rules! $array_macro {
+            ($d($i:expr),* $d(,)?) => {
+                [$d(bounded_utils::$BoundedType::constant::<{$i}>()),*]
+            };
+        }
+    };
+}
 
 make_bounded_type!(
     $,

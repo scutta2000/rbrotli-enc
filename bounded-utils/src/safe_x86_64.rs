@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use safe_arch_macro::safe_arch;
 use std::{arch::x86_64::*, marker::PhantomData};
 use zerocopy::{AsBytes, FromBytes};
 
@@ -54,7 +53,6 @@ impl<T: Sized, const SIZE: i32> CheckSameSize<T, SIZE> {
 
 #[inline]
 #[target_feature(enable = "avx")]
-#[safe_arch]
 pub fn _mm256_load<T: AsBytes, const SLICE_BOUND: usize, const START_BOUND: usize>(
     data: &BoundedSlice<T, SLICE_BOUND>,
     start: BoundedUsize<START_BOUND>,
@@ -68,7 +66,6 @@ pub fn _mm256_load<T: AsBytes, const SLICE_BOUND: usize, const START_BOUND: usiz
 
 #[inline]
 #[target_feature(enable = "avx")]
-#[safe_arch]
 pub fn _mm256_store<T: FromBytes, const SLICE_BOUND: usize, const START_BOUND: usize>(
     data: &mut BoundedSlice<T, SLICE_BOUND>,
     start: BoundedUsize<START_BOUND>,
@@ -88,7 +85,6 @@ pub fn _mm256_store<T: FromBytes, const SLICE_BOUND: usize, const START_BOUND: u
 
 #[inline]
 #[target_feature(enable = "avx2")]
-#[safe_arch]
 pub fn _mm256_store_masked_u8<
     const SLICE_BOUND: usize,
     const START_BOUND: usize,
@@ -113,7 +109,6 @@ pub fn _mm256_store_masked_u8<
 
 #[inline]
 #[target_feature(enable = "sse2")]
-#[safe_arch]
 pub fn _mm256_store_masked_u32<
     const SLICE_BOUND: usize,
     const START_BOUND: usize,
@@ -138,7 +133,6 @@ pub fn _mm256_store_masked_u32<
 
 #[inline]
 #[target_feature(enable = "avx2")]
-#[safe_arch]
 pub fn _mm256_masked_i32gather<T: AsBytes, const SCALE: i32, const ARRAY_BOUND: usize>(
     slice: &BoundedSlice<T, ARRAY_BOUND>,
     offsets: __m256i,
@@ -159,7 +153,6 @@ const SSE_VECTOR_SIZE: usize = 16;
 
 #[inline]
 #[target_feature(enable = "sse2")]
-#[safe_arch]
 pub fn _mm_load<T: AsBytes, const SLICE_BOUND: usize, const START_BOUND: usize>(
     data: &BoundedSlice<T, SLICE_BOUND>,
     start: BoundedUsize<START_BOUND>,
@@ -173,7 +166,6 @@ pub fn _mm_load<T: AsBytes, const SLICE_BOUND: usize, const START_BOUND: usize>(
 
 #[inline]
 #[target_feature(enable = "sse2")]
-#[safe_arch]
 pub fn _mm_store<T: FromBytes, const SLICE_BOUND: usize, const START_BOUND: usize>(
     data: &mut BoundedSlice<T, SLICE_BOUND>,
     start: BoundedUsize<START_BOUND>,
@@ -193,7 +185,6 @@ pub fn _mm_store<T: FromBytes, const SLICE_BOUND: usize, const START_BOUND: usiz
 
 #[inline]
 #[target_feature(enable = "sse2")]
-#[safe_arch]
 pub fn _mm_store_masked_u8<
     const SLICE_BOUND: usize,
     const START_BOUND: usize,
@@ -218,7 +209,6 @@ pub fn _mm_store_masked_u8<
 
 #[inline]
 #[target_feature(enable = "sse2")]
-#[safe_arch]
 pub fn _mm_store_masked_u32<
     const SLICE_BOUND: usize,
     const START_BOUND: usize,
@@ -243,7 +233,6 @@ pub fn _mm_store_masked_u32<
 
 #[inline]
 #[target_feature(enable = "sse")]
-#[safe_arch]
 pub fn _mm_safe_prefetch<const STRATEGY: i32, T>(r: &T) {
     // SAFETY: target_feature_11 checks we can call SSE functions. The addresses we generate and
     // feed to prefetch fit within the range of memory pointed to by `r`.

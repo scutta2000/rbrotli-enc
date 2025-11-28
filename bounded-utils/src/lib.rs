@@ -17,9 +17,6 @@
 //! exceed a certain compile-time value.
 #![allow(clippy::let_unit_value)]
 
-#[macro_use]
-mod make_bounded_type;
-
 mod bounded_iterator;
 mod bounded_slice;
 mod bounded_usize;
