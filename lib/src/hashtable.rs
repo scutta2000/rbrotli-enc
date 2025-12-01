@@ -19,7 +19,6 @@ use bounded_utils::{
     bounded_u8_array, BoundedIterable, BoundedSlice, BoundedU32, BoundedU8, BoundedUsize,
 };
 use hugepage_buffer::BoxedHugePageArray;
-use safe_arch_macro::safe_arch;
 use std::arch::x86_64::*;
 use zerocopy::FromZeroes;
 
@@ -74,7 +73,6 @@ struct HashTableEntry<const ENTRY_SIZE: usize> {
 
 #[inline]
 #[target_feature(enable = "avx,avx2")]
-#[safe_arch]
 fn longest_match(data: &[u8], pos1: u32, pos2: usize) -> usize {
     let pos1 = pos1 as usize;
     let max = (data.len() - pos2.max(pos1) - INTERIOR_MARGIN).min(MAX_COPY_LEN);
@@ -130,7 +128,6 @@ fn gain_from_len_and_dist<const USE_LAST_DISTANCES: bool>(
 
 #[inline]
 #[target_feature(enable = "avx,avx2")]
-#[safe_arch]
 fn gain_from_len_and_dist_simd<const USE_LAST_DISTANCES: bool>(
     len: __m256i,
     dist: __m256i,
@@ -166,7 +163,6 @@ fn gain_from_len_and_dist_simd<const USE_LAST_DISTANCES: bool>(
 
 #[inline]
 #[target_feature(enable = "avx,avx2")]
-#[safe_arch]
 #[allow(clippy::too_many_arguments)]
 fn update_with_long_matches<const ENTRY_SIZE: usize, const USE_LAST_DISTANCES: bool>(
     data: &[u8],
@@ -201,7 +197,6 @@ fn get_chunks<const SIZE: usize>(data_slice: &BoundedSlice<u8, SIZE>) -> (u32, u
 
 #[inline]
 #[target_feature(enable = "avx,avx2")]
-#[safe_arch]
 fn _mm256_ilog2_epi32(x: __m256i) -> __m256i {
     let float = _mm256_castps_si256(_mm256_cvtepi32_ps(x));
     _mm256_sub_epi32(_mm256_srli_epi32::<23>(float), _mm256_set1_epi32(127))
@@ -209,7 +204,6 @@ fn _mm256_ilog2_epi32(x: __m256i) -> __m256i {
 
 #[inline]
 #[target_feature(enable = "avx,avx2")]
-#[safe_arch]
 fn table_search<
     const ENTRY_SIZE: usize,
     const ENTRY_SIZE_MINUS_EIGHT: usize,
@@ -331,7 +325,6 @@ const PRECOMPUTE_SIZE: usize = 16;
 
 #[inline]
 #[target_feature(enable = "sse2,ssse3,sse4.1,avx,avx2")]
-#[safe_arch]
 fn compute_context(
     data_slice: &BoundedSlice<u8, { INTERIOR_MARGIN + CONTEXT_OFFSET }>,
     context: &mut [BoundedU8<63>; PRECOMPUTE_SIZE],
@@ -407,7 +400,6 @@ fn compute_context(
 
 #[inline]
 #[target_feature(enable = "sse2,ssse3,sse4.1,avx,avx2")]
-#[safe_arch]
 fn compute_hash_at(
     data_slice: &BoundedSlice<u8, INTERIOR_MARGIN>,
     hashes: &mut [BoundedU32<{ TABLE_SIZE - 1 }>; PRECOMPUTE_SIZE],
@@ -454,7 +446,6 @@ const TABLE_SIZE: usize = 1 << LOG_TABLE_SIZE;
 
 #[inline]
 #[target_feature(enable = "sse2,ssse3,sse4.1,avx,avx2")]
-#[safe_arch]
 fn compute_hash_and_context_at(
     data_slice: &BoundedSlice<u8, { INTERIOR_MARGIN + CONTEXT_OFFSET }>,
     context: &mut [BoundedU8<63>; PRECOMPUTE_SIZE],
@@ -503,7 +494,6 @@ impl<
 
     #[inline]
     #[target_feature(enable = "sse")]
-    #[safe_arch]
     fn prefetch_pos(&self, pos: BoundedUsize<{ TABLE_SIZE - 1 }>) {
         let entry = BoundedSlice::new_from_equal_array(&self.table).get(pos);
         let ridx = BoundedSlice::new_from_equal_array(&self.replacement_idx).get(pos);
@@ -514,7 +504,6 @@ impl<
     /// Returns the number of bytes that were written to the output. Updates the hash table with
     /// strings starting at all of those bytes, if within the margin.
     #[target_feature(enable = "sse,sse2,ssse3,sse4.1,avx,avx2")]
-    #[safe_arch]
     #[inline(never)]
     fn parse_and_emit_interior<const MIN_GAIN_FOR_GREEDY: i32, const USE_LAST_DISTANCES: bool>(
         &mut self,
@@ -691,7 +680,6 @@ impl<
     }
 
     #[target_feature(enable = "sse,sse2,ssse3,sse4.1,avx,avx2")]
-    #[safe_arch]
     pub fn parse_and_emit_metablock<
         const FAST_MATCHING: bool,
         const MIN_GAIN_FOR_GREEDY: i32,
@@ -743,7 +731,6 @@ impl<
     /// Returns the number of bytes that were written to the output. Updates the hash table with
     /// strings starting at all of those bytes, if within the margin.
     #[target_feature(enable = "sse,sse2,ssse3,sse4.1,avx,avx2")]
-    #[safe_arch]
     #[inline(never)]
     fn parse_and_emit_interior_fast<const USE_LAST_DISTANCES: bool>(
         &mut self,
@@ -865,7 +852,6 @@ impl<
     }
 
     #[target_feature(enable = "sse,sse2,ssse3,sse4.1,avx,avx2")]
-    #[safe_arch]
     pub fn parse_and_emit_metablock_fast<const USE_LAST_DISTANCES: bool>(
         &mut self,
         data: &[u8],

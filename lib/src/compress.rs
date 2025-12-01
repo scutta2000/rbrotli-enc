@@ -25,7 +25,7 @@ use bounded_utils::safe_x86_64;
 use bounded_utils::{BoundedIterable, BoundedSlice, BoundedU8, BoundedUsize};
 use hugepage_buffer::BoxedHugePageArray;
 use lsb_bitwriter::BitWriter;
-use safe_arch_macro::{safe_arch, safe_arch_entrypoint};
+use safe_arch_macro::safe_arch_entrypoint;
 use std::arch::x86_64::*;
 use std::mem::MaybeUninit;
 use zerocopy::{transmute, transmute_mut, AsBytes, FromZeroes};
@@ -67,7 +67,6 @@ pub struct MetablockData {
 }
 
 #[target_feature(enable = "sse,sse2,sse3,ssse3,sse4.1,sse4.2,avx,avx2")]
-#[safe_arch]
 fn histogram_distance(a: &LiteralHistogram, b: &LiteralHistogram) -> i32 {
     if a.total == 0 || b.total == 0 {
         return 0;
@@ -122,7 +121,6 @@ fn histogram_distance(a: &LiteralHistogram, b: &LiteralHistogram) -> i32 {
 
 #[inline(never)]
 #[target_feature(enable = "sse,sse2,sse3,ssse3,sse4.1,sse4.2,avx,avx2")]
-#[safe_arch]
 fn cluster_histograms(histograms: &[LiteralHistogram; 64]) -> (Vec<LiteralHistogram>, [u8; 64]) {
     let mut used = [false; 64];
     let mut cmap = [0; 64];
@@ -252,7 +250,6 @@ impl MetablockData {
 
     #[inline]
     #[target_feature(enable = "sse,sse2,sse3,ssse3,sse4.1,sse4.2,avx,avx2")]
-    #[safe_arch]
     fn add_literals(&mut self, count: u32, literals_cmap: &[u8; 64]) {
         if count == 0 {
             return;
@@ -314,7 +311,6 @@ impl MetablockData {
     #[allow(clippy::too_many_arguments)]
     #[inline]
     #[target_feature(enable = "sse,sse2,sse3,ssse3,sse4.1,sse4.2,avx,avx2")]
-    #[safe_arch]
     fn add_iac(
         &mut self,
         i: usize,
@@ -367,7 +363,6 @@ impl MetablockData {
 
     #[inline(never)]
     #[target_feature(enable = "sse,sse2,sse3,ssse3,sse4.1,sse4.2,avx,avx2")]
-    #[safe_arch]
     fn compute_symbols_and_icd_histograms(
         &mut self,
         iac_hist: &mut [u32; IAC_HIST_BUF_SIZE],
@@ -468,7 +463,6 @@ impl MetablockData {
 
     #[inline]
     #[target_feature(enable = "sse,sse2,sse3,ssse3,sse4.1,sse4.2,avx,avx2")]
-    #[safe_arch]
     fn write_bits(&mut self, bw: &mut BitWriter) {
         let get_sym_mask = _mm256_set1_epi16(!SYMBOL_MASK as i16);
         const _: () = assert!(SYMBOL_MASK == 0x8000);
@@ -561,7 +555,6 @@ impl MetablockData {
 
     #[inline]
     #[target_feature(enable = "sse,sse2,sse3,ssse3,sse4.1,sse4.2,avx,avx2")]
-    #[safe_arch]
     fn write(&mut self, bw: &mut BitWriter, histo_buf: &mut HistogramBuffers, count: usize) {
         let mut header = metablock::Header {
             len: count,

@@ -15,7 +15,6 @@
 use crate::constants::*;
 use bounded_utils::safe_x86_64;
 use bounded_utils::{BoundedSlice, BoundedUsize};
-use safe_arch_macro::safe_arch;
 use std::arch::x86_64::*;
 
 const INS_BASE: [u32; 24] = [
@@ -92,7 +91,6 @@ pub fn insert_copy_len_to_sym_and_bits(insert: u32, copy: u32) -> (u16, u8, u64)
 
 #[inline]
 #[target_feature(enable = "avx,avx2")]
-#[safe_arch]
 fn copy_len_to_sym_and_bits_simd(len: __m256i) -> (__m256i, __m256i, __m256i) {
     let less_134 = _mm256_cmpgt_epi32(_mm256_set1_epi32(134), len);
     let nbitsoff = _mm256_sub_epi32(_mm256_set1_epi32(127), less_134);
@@ -127,7 +125,6 @@ fn copy_len_to_sym_and_bits_simd(len: __m256i) -> (__m256i, __m256i, __m256i) {
 
 #[inline]
 #[target_feature(enable = "sse2,avx,avx2")]
-#[safe_arch]
 fn insert_len_to_sym_and_bits_simd(len: __m256i) -> (__m256i, __m256i, __m256i) {
     let v130 = _mm256_set1_epi32(130);
     let v2114 = _mm256_set1_epi32(2114);
@@ -185,7 +182,6 @@ fn insert_len_to_sym_and_bits_simd(len: __m256i) -> (__m256i, __m256i, __m256i) 
 #[allow(clippy::too_many_arguments)]
 #[inline]
 #[target_feature(enable = "sse2,avx,avx2")]
-#[safe_arch]
 pub fn insert_copy_len_to_sym_and_bits_simd<const SLICE_BOUND: usize, const INDEX_BOUND: usize>(
     insert: &BoundedSlice<u32, SLICE_BOUND>,
     copy: &BoundedSlice<u32, SLICE_BOUND>,
@@ -340,7 +336,6 @@ fn distance_to_sym_and_bits_with_cache(
 
 #[inline]
 #[target_feature(enable = "sse2,avx,avx2")]
-#[safe_arch]
 pub fn distance_to_sym_and_bits_simd<
     const SLICE_BOUND: usize,
     const INDEX_BOUND: usize,
