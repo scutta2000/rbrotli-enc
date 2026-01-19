@@ -15,51 +15,6 @@
 use proc_macro::TokenStream;
 use syn::{parse::Parser, FnArg, GenericParam};
 
-#[cfg(not(feature = "stable-compat"))]
-#[proc_macro_attribute]
-pub fn safe_arch(_: TokenStream, input: TokenStream) -> TokenStream {
-    input
-}
-
-#[cfg(feature = "stable-compat")]
-#[proc_macro_attribute]
-pub fn safe_arch(_: TokenStream, input: TokenStream) -> TokenStream {
-    use quote::quote;
-    use syn::{parse_macro_input, Item, Signature};
-    let Item::Fn(func) = parse_macro_input!(input as Item) else {
-        panic!("safe_arch not applied to a function");
-    };
-    let attrs = &func.attrs;
-    let vis = &func.vis;
-    let block = &func.block;
-    let Signature {
-        constness,
-        asyncness,
-        unsafety,
-        abi,
-        fn_token,
-        ident,
-        generics,
-        paren_token: _paren_token,
-        inputs,
-        variadic,
-        output,
-    } = &func.sig;
-    let (impl_generics, _, where_clause) = generics.split_for_impl();
-
-    if unsafety.is_some() {
-        panic!("safe_arch applied to already-unsafe function");
-    }
-
-    quote! {
-        #(#attrs)* #vis #constness #asyncness unsafe #abi
-        #fn_token #ident #impl_generics (#inputs #variadic) #output #where_clause {
-            #block
-        }
-    }
-    .into()
-}
-
 #[proc_macro_attribute]
 pub fn safe_arch_entrypoint(args: TokenStream, input: TokenStream) -> TokenStream {
     use quote::quote;
@@ -135,17 +90,11 @@ pub fn safe_arch_entrypoint(args: TokenStream, input: TokenStream) -> TokenStrea
         })
         .collect::<Vec<_>>();
 
-    #[cfg(not(feature = "stable-compat"))]
-    let inner_unsafety = quote! {};
-
-    #[cfg(feature = "stable-compat")]
-    let inner_unsafety = quote! { unsafe };
-
     quote! {
         #(#attrs)* #vis #constness #asyncness #abi
         #fn_token #ident #impl_generics (#inputs #variadic) #output #where_clause {
             #[target_feature(enable = #tf)]
-            #inner_unsafety fn inner_fn #impl_generics (#inputs #variadic) #output #where_clause {
+            fn inner_fn #impl_generics (#inputs #variadic) #output #where_clause {
                 #block
             }
             if #(#f_checks &&)* true {
