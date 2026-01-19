@@ -90,17 +90,11 @@ pub fn safe_arch_entrypoint(args: TokenStream, input: TokenStream) -> TokenStrea
         })
         .collect::<Vec<_>>();
 
-    #[cfg(not(feature = "stable-compat"))]
-    let inner_unsafety = quote! {};
-
-    #[cfg(feature = "stable-compat")]
-    let inner_unsafety = quote! { unsafe };
-
     quote! {
         #(#attrs)* #vis #constness #asyncness #abi
         #fn_token #ident #impl_generics (#inputs #variadic) #output #where_clause {
             #[target_feature(enable = #tf)]
-            #inner_unsafety fn inner_fn #impl_generics (#inputs #variadic) #output #where_clause {
+            fn inner_fn #impl_generics (#inputs #variadic) #output #where_clause {
                 #block
             }
             if #(#f_checks &&)* true {
