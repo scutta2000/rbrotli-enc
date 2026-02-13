@@ -887,31 +887,4 @@ mod test {
             }
         }
     }
-
-    // #[test]
-    // #[safe_arch_entrypoint("sse2", "ssse3", "sse4.1", "avx", "avx2")]
-    // fn test_compute_context() {
-    //     let mut context = [BoundedU8::constant::<0>(); PRECOMPUTE_SIZE];
-    //     let mut data = [0; 256];
-    //
-    //     let step = if cfg!(miri) { 10 } else { 1 };
-    //
-    //     for i in (0..=255).step_by(step) {
-    //         for j in (0..=255).step_by(step) {
-    //             for x in 0..8 {
-    //                 data[2 * x] = i;
-    //                 data[2 * x + 1] = j;
-    //             }
-    //             compute_context(BoundedSlice::new(&data).unwrap(), &mut context);
-    //             for x in 0..PRECOMPUTE_SIZE / 2 {
-    //                 let a = data[x + 1];
-    //                 let b = data[x];
-    //                 assert_eq!(
-    //                     context[x],
-    //                     CONTEXT_LUT0[a as usize] | CONTEXT_LUT1[b as usize]
-    //                 );
-    //             }
-    //         }
-    //     }
-    // }
 }
