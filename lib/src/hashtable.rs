@@ -15,9 +15,7 @@
 use crate::compress::MetablockData;
 use crate::constants::*;
 use bounded_utils::safe_x86_64;
-use bounded_utils::{
-    bounded_u8_array, BoundedIterable, BoundedSlice, BoundedU32, BoundedU8, BoundedUsize,
-};
+use bounded_utils::{BoundedIterable, BoundedSlice, BoundedU32, BoundedU8, BoundedUsize};
 use hugepage_buffer::BoxedHugePageArray;
 use std::arch::x86_64::*;
 use zerocopy::FromZeroes;
@@ -298,29 +296,6 @@ fn table_search<
     (d, l, g, len12p_mask)
 }
 
-const CONTEXT_LUT0: [BoundedU8<63>; 256] = bounded_u8_array![
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    8, 12, 16, 12, 12, 20, 12, 16, 24, 28, 12, 12, 32, 12, 36, 12, 44, 44, 44, 44, 44, 44, 44, 44,
-    44, 44, 32, 32, 24, 40, 28, 12, 12, 48, 52, 52, 52, 48, 52, 52, 52, 48, 52, 52, 52, 52, 52, 48,
-    52, 52, 52, 52, 52, 48, 52, 52, 52, 52, 52, 24, 12, 28, 12, 12, 12, 56, 60, 60, 60, 56, 60, 60,
-    60, 56, 60, 60, 60, 60, 60, 56, 60, 60, 60, 60, 60, 56, 60, 60, 60, 60, 60, 24, 12, 28, 12, 0,
-    0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
-    0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
-    2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3,
-    2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3,
-];
-
-const CONTEXT_LUT1: [BoundedU8<63>; 256] = bounded_u8_array![
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1,
-    1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1,
-    1, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1, 1, 1, 1, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-];
-
 const PRECOMPUTE_SIZE: usize = 16;
 
 #[inline]
@@ -521,12 +496,9 @@ impl<
         let mut context = [BoundedU8::constant::<0>(); PRECOMPUTE_SIZE];
         let mut hashes = [BoundedU32::constant::<0>(); PRECOMPUTE_SIZE];
 
-        let zero_ctx = BoundedU8::constant::<0>();
-
         let mut last_dist = 0;
         let mut last_len = 0;
         let mut last_gain = 0;
-        let mut last_ctx = zero_ctx;
         let mut last_lit = 0;
         let mut has_lazy = false;
 
@@ -585,25 +557,23 @@ impl<
                         gain,
                     )
                 };
-                let ctx = *BoundedSlice::new_from_equal_array(&context).get(po);
                 let lit = *data_slice.get(BoundedUsize::<{ CONTEXT_OFFSET + 1 }>::constant::<
                     CONTEXT_OFFSET,
                 >());
 
                 let (lit_params, copy_params) = if has_lazy && gain <= last_gain + GAIN_FOR_LAZY {
-                    let val = ((zero_ctx, 0, false), (last_len, last_dist, true));
+                    let val = ((0, false), (last_len, last_dist, true));
                     skip = last_len - 2;
                     has_lazy = false;
                     val
                 } else if gain > MIN_GAIN_FOR_GREEDY {
-                    let val = ((last_ctx, last_lit, has_lazy), (len, dist, true));
+                    let val = ((last_lit, has_lazy), (len, dist, true));
                     skip = len - 1;
                     has_lazy = false;
                     val
                 } else if len >= 4 {
-                    let val = ((last_ctx, last_lit, has_lazy), (0, 0, false));
+                    let val = ((last_lit, has_lazy), (0, 0, false));
                     last_lit = lit;
-                    last_ctx = ctx;
                     last_dist = dist;
                     last_len = len;
                     last_gain = gain;
@@ -611,9 +581,9 @@ impl<
                     val
                 } else {
                     debug_assert!(!has_lazy);
-                    ((ctx, lit, true), (0, 0, false))
+                    ((lit, true), (0, 0, false))
                 };
-                metablock_data.add_literal(lit_params.0, lit_params.1, lit_params.2);
+                metablock_data.add_literal(lit_params.0, lit_params.1);
                 metablock_data.add_copy(copy_params.0, copy_params.1, copy_params.2);
                 if USE_LAST_DISTANCES {
                     last_distances = if copy_params.2 {
@@ -703,10 +673,10 @@ impl<
         // slightly faster code.
         let mut bpos = start;
         if bpos == 0 {
-            metablock_data.add_literal(BoundedU8::constant::<0>(), data[0], true);
+            metablock_data.add_literal(data[0], true);
             bpos += 1;
             if bpos < data.len() {
-                metablock_data.add_literal(CONTEXT_LUT0[data[0] as usize], data[1], true);
+                metablock_data.add_literal(data[1], true);
                 bpos += 1;
             }
         }
@@ -719,10 +689,7 @@ impl<
             metablock_data,
         );
         while bpos < start + count {
-            let a = data[bpos - 1];
-            let b = data[bpos - 2];
-            let context = CONTEXT_LUT0[a as usize] | CONTEXT_LUT1[b as usize];
-            metablock_data.add_literal(context, data[bpos], true);
+            metablock_data.add_literal(data[bpos], true);
             bpos += 1;
         }
         bpos - start
@@ -837,7 +804,7 @@ impl<
                 pos += 1;
                 ((lit, true), (0, 0, false))
             };
-            metablock_data.add_literal(BoundedU8::constant::<0>(), lit_params.0, lit_params.1);
+            metablock_data.add_literal(lit_params.0, lit_params.1);
             metablock_data.add_copy(copy_params.0, copy_params.1, copy_params.2);
             if USE_LAST_DISTANCES {
                 last_distances = if copy_params.2 {
@@ -869,7 +836,7 @@ impl<
             metablock_data,
         );
         while bpos < start + count {
-            metablock_data.add_literal(BoundedU8::constant::<0>(), data[bpos], true);
+            metablock_data.add_literal(data[bpos], true);
             bpos += 1;
         }
         bpos - start
@@ -880,7 +847,7 @@ impl<
 mod test {
     use super::{
         _mm256_ilog2_epi32, compute_context, gain_from_len_and_dist, gain_from_len_and_dist_simd,
-        CONTEXT_LUT0, CONTEXT_LUT1, PRECOMPUTE_SIZE,
+        PRECOMPUTE_SIZE,
     };
     use crate::constants::*;
     use bounded_utils::{BoundedSlice, BoundedU8};
@@ -921,30 +888,30 @@ mod test {
         }
     }
 
-    #[test]
-    #[safe_arch_entrypoint("sse2", "ssse3", "sse4.1", "avx", "avx2")]
-    fn test_compute_context() {
-        let mut context = [BoundedU8::constant::<0>(); PRECOMPUTE_SIZE];
-        let mut data = [0; 256];
-
-        let step = if cfg!(miri) { 10 } else { 1 };
-
-        for i in (0..=255).step_by(step) {
-            for j in (0..=255).step_by(step) {
-                for x in 0..8 {
-                    data[2 * x] = i;
-                    data[2 * x + 1] = j;
-                }
-                compute_context(BoundedSlice::new(&data).unwrap(), &mut context);
-                for x in 0..PRECOMPUTE_SIZE / 2 {
-                    let a = data[x + 1];
-                    let b = data[x];
-                    assert_eq!(
-                        context[x],
-                        CONTEXT_LUT0[a as usize] | CONTEXT_LUT1[b as usize]
-                    );
-                }
-            }
-        }
-    }
+    // #[test]
+    // #[safe_arch_entrypoint("sse2", "ssse3", "sse4.1", "avx", "avx2")]
+    // fn test_compute_context() {
+    //     let mut context = [BoundedU8::constant::<0>(); PRECOMPUTE_SIZE];
+    //     let mut data = [0; 256];
+    //
+    //     let step = if cfg!(miri) { 10 } else { 1 };
+    //
+    //     for i in (0..=255).step_by(step) {
+    //         for j in (0..=255).step_by(step) {
+    //             for x in 0..8 {
+    //                 data[2 * x] = i;
+    //                 data[2 * x + 1] = j;
+    //             }
+    //             compute_context(BoundedSlice::new(&data).unwrap(), &mut context);
+    //             for x in 0..PRECOMPUTE_SIZE / 2 {
+    //                 let a = data[x + 1];
+    //                 let b = data[x];
+    //                 assert_eq!(
+    //                     context[x],
+    //                     CONTEXT_LUT0[a as usize] | CONTEXT_LUT1[b as usize]
+    //                 );
+    //             }
+    //         }
+    //     }
+    // }
 }

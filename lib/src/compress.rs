@@ -22,7 +22,7 @@ use crate::{
     metablock::{self, ContextMode},
 };
 use bounded_utils::safe_x86_64;
-use bounded_utils::{BoundedIterable, BoundedSlice, BoundedU8, BoundedUsize};
+use bounded_utils::{BoundedIterable, BoundedSlice, BoundedUsize};
 use hugepage_buffer::BoxedHugePageArray;
 use lsb_bitwriter::BitWriter;
 use safe_arch_macro::safe_arch_entrypoint;
@@ -36,7 +36,6 @@ use crate::constants::*;
 #[repr(C)]
 struct Literal {
     value: u8,
-    context: BoundedU8<63>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -99,8 +98,8 @@ impl MetablockData {
     }
 
     #[inline]
-    pub fn add_literal(&mut self, context: BoundedU8<63>, value: u8, do_add: bool) {
-        self.literals[self.total_literals as usize] = Literal { context, value };
+    pub fn add_literal(&mut self, value: u8, do_add: bool) {
+        self.literals[self.total_literals as usize] = Literal { value };
         self.total_literals += if do_add { 1 } else { 0 };
     }
 
@@ -128,14 +127,15 @@ impl MetablockData {
         let literals = BoundedSlice::new_from_equal_array(&self.literals);
         let syms = BoundedSlice::new_from_equal_array_mut(&mut self.symbol_or_nbits);
 
-        let num = (count + 15) / 16;
+        const SIZE_OF_LITERAL: usize = std::mem::size_of::<Literal>() * 8;
+        let num = (count + 15) / SIZE_OF_LITERAL as u32;
         let start = (self.iac_literals as usize, self.num_syms.get());
         // TODO(veluca): the checked_ operations in `::iter` cause a small but measurable slowdown
         // (~0.7% overall). The compiler could, in principle, figure out that they are not needed.
         for (idx, out_idx) in <(
-            BoundedUsize<{ LITERAL_BUF_SIZE - 16 }>,
-            BoundedUsize<{ SYMBOL_BUF_SIZE - 16 }>,
-        )>::iter(start, num as usize, (16, 16))
+            BoundedUsize<{ LITERAL_BUF_SIZE - 32 }>,
+            BoundedUsize<{ SYMBOL_BUF_SIZE - 32 }>,
+        )>::iter(start, num as usize, (32, 32))
         {
             let lits = safe_x86_64::_mm256_load(literals, idx);
             let val = _mm256_and_si256(lits, _mm256_set1_epi16(0xFF));
