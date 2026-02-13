@@ -127,14 +127,14 @@ impl MetablockData {
         let literals = BoundedSlice::new_from_equal_array(&self.literals);
         let syms = BoundedSlice::new_from_equal_array_mut(&mut self.symbol_or_nbits);
 
-        const SIZE_OF_LITERAL: usize = std::mem::size_of::<Literal>() * 8;
-        let num = (count + 15) / SIZE_OF_LITERAL as u32;
+        const SIZE_OF_LITERAL: usize = std::mem::size_of::<Literal>();
+        let num = (count + 15) / (SIZE_OF_LITERAL * 8) as u32;
         let start = (self.iac_literals as usize, self.num_syms.get());
         // TODO(veluca): the checked_ operations in `::iter` cause a small but measurable slowdown
         // (~0.7% overall). The compiler could, in principle, figure out that they are not needed.
         for (idx, out_idx) in <(
-            BoundedUsize<{ LITERAL_BUF_SIZE - 32 }>,
-            BoundedUsize<{ SYMBOL_BUF_SIZE - 32 }>,
+            BoundedUsize<{ LITERAL_BUF_SIZE - 32 / SIZE_OF_LITERAL }>,
+            BoundedUsize<{ SYMBOL_BUF_SIZE - 32 / SIZE_OF_LITERAL }>,
         )>::iter(start, num as usize, (32, 32))
         {
             let lits = safe_x86_64::_mm256_load(literals, idx);
