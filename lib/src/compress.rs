@@ -128,17 +128,17 @@ impl MetablockData {
         let syms = BoundedSlice::new_from_equal_array_mut(&mut self.symbol_or_nbits);
 
         const SIZE_OF_LITERAL: usize = std::mem::size_of::<Literal>();
-        let num = (count + 15) / (SIZE_OF_LITERAL * 8) as u32;
+        let num = (count + 15) / 16;
         let start = (self.iac_literals as usize, self.num_syms.get());
         // TODO(veluca): the checked_ operations in `::iter` cause a small but measurable slowdown
         // (~0.7% overall). The compiler could, in principle, figure out that they are not needed.
         for (idx, out_idx) in <(
-            BoundedUsize<{ LITERAL_BUF_SIZE - 32 / SIZE_OF_LITERAL }>,
-            BoundedUsize<{ SYMBOL_BUF_SIZE - 32 / SIZE_OF_LITERAL }>,
-        )>::iter(start, num as usize, (32, 32))
+            BoundedUsize<{ LITERAL_BUF_SIZE - 16 / SIZE_OF_LITERAL }>,
+            BoundedUsize<{ SYMBOL_BUF_SIZE - 16 }>,
+        )>::iter(start, num as usize, (16, 16))
         {
-            let lits = safe_x86_64::_mm256_load(literals, idx);
-            let val = _mm256_and_si256(lits, _mm256_set1_epi16(0xFF));
+            let lits = safe_x86_64::_mm_load(literals, idx);
+            let val = _mm256_cvtepu8_epi16(lits);
             let off = _mm256_set1_epi16((LIT_BASE + SYMBOL_MASK) as i16);
             let res = _mm256_add_epi16(off, val);
             safe_x86_64::_mm256_store(syms, out_idx, res);
@@ -220,7 +220,6 @@ impl MetablockData {
         let mut insert_and_copy_nbits_pat_buf = [0; 8];
         let mut insert_and_copy_nbits_count_buf = [0; 8];
         let mut insert_and_copy_sym_buf = [0; 8];
-        let mut distance_ctx_buf = [0; 8];
         let mut distance_bits_buf = [0; 8];
         let mut distance_nbits_pat_buf = [0; 8];
         let mut distance_nbits_count_buf = [0; 8];
@@ -240,12 +239,10 @@ impl MetablockData {
                 &mut insert_and_copy_bits_buf,
                 &mut insert_and_copy_nbits_pat_buf,
                 &mut insert_and_copy_nbits_count_buf,
-                &mut distance_ctx_buf,
             );
             distance_to_sym_and_bits_simd::<ICD_BUF_SIZE, ICD_BUF_LIMIT, { ICD_BUF_LIMIT + 2 }>(
                 BoundedSlice::new_from_equal_array(&self.distance),
                 i,
-                &distance_ctx_buf,
                 &mut distance_sym_buf,
                 &mut distance_bits_buf,
                 &mut distance_nbits_pat_buf,
@@ -440,7 +437,7 @@ impl MetablockData {
         (buf, code) = HuffmanCode::from_counts(&iac_hist[..MAX_IAC], 15, buf);
         header.insert_and_copy_codes.push(code);
 
-        header.distance_cmap = ContextMap::new(&[0, 0, 0, 1]);
+        header.distance_cmap = ContextMap::new(&[0, 0, 0, 0]);
         (buf, code) = HuffmanCode::from_counts(dist_hist, 15, buf);
         header.distance_codes.push(code);
 
@@ -634,7 +631,7 @@ impl<
         let mut virtual_start = 0;
         let mut pos = 0;
         while pos < data.len() {
-            self.md.reset(ContextMode::UTF8, pos == 0);
+            self.md.reset(ContextMode::Signed, pos == 0);
             pos += compress_one_metablock::<
                 ENTRY_SIZE,
                 ENTRY_SIZE_MINUS_ONE,
