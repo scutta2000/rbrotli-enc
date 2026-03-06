@@ -845,12 +845,8 @@ impl<
 
 #[cfg(test)]
 mod test {
-    use super::{
-        _mm256_ilog2_epi32, compute_context, gain_from_len_and_dist, gain_from_len_and_dist_simd,
-        PRECOMPUTE_SIZE,
-    };
+    use super::{_mm256_ilog2_epi32, gain_from_len_and_dist, gain_from_len_and_dist_simd};
     use crate::constants::*;
-    use bounded_utils::{BoundedSlice, BoundedU8};
     use safe_arch_macro::safe_arch_entrypoint;
     use std::arch::x86_64::{_mm256_extract_epi32, _mm256_set1_epi32};
 

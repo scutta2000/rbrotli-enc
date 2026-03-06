@@ -133,9 +133,9 @@ impl MetablockData {
         // TODO(veluca): the checked_ operations in `::iter` cause a small but measurable slowdown
         // (~0.7% overall). The compiler could, in principle, figure out that they are not needed.
         for (idx, out_idx) in <(
-            BoundedUsize<{ LITERAL_BUF_SIZE - 16 / SIZE_OF_LITERAL }>,
-            BoundedUsize<{ SYMBOL_BUF_SIZE - 16 }>,
-        )>::iter(start, num as usize, (16, 16))
+            BoundedUsize<{ (LITERAL_BUF_SIZE - 32) / SIZE_OF_LITERAL }>,
+            BoundedUsize<{ (SYMBOL_BUF_SIZE - 32) / SIZE_OF_LITERAL }>,
+        )>::iter(start, num as usize, (32, 32))
         {
             let lits = safe_x86_64::_mm_load(literals, idx);
             let val = _mm256_cvtepu8_epi16(lits);
@@ -441,7 +441,7 @@ impl MetablockData {
         (buf, code) = HuffmanCode::from_counts(dist_hist, 15, buf);
         header.distance_codes.push(code);
 
-        header.literals_cmap = ContextMap::new(&[0]);
+        header.literals_cmap = ContextMap::new(&[0; 64]);
         (_, code) = HuffmanCode::from_counts(&lit_hist.data, 15, buf);
         header.literals_codes.push(code);
         header.write(bw);
