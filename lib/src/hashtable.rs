@@ -30,7 +30,6 @@ const LD_MAXDIFF: i32 = 3;
 const LD_OFF: i32 = 150;
 
 const INTERIOR_MARGIN: usize = 32;
-const CONTEXT_OFFSET: usize = 2;
 
 fn hash(data: u32) -> u32 {
     data.wrapping_mul(0x1E35A7BD) >> (32 - LOG_TABLE_SIZE)
@@ -300,81 +299,6 @@ const PRECOMPUTE_SIZE: usize = 16;
 
 #[inline]
 #[target_feature(enable = "sse2,ssse3,sse4.1,avx,avx2")]
-fn compute_context(
-    data_slice: &BoundedSlice<u8, { INTERIOR_MARGIN + CONTEXT_OFFSET }>,
-    context: &mut [BoundedU8<63>; PRECOMPUTE_SIZE],
-) {
-    let ctx_in = safe_x86_64::_mm_load(data_slice, BoundedUsize::<1>::constant::<0>());
-    // low 64 bits: data[-2], high 64 bits: data[-1].
-    let ctx_in_128 = _mm_shuffle_epi8(
-        ctx_in,
-        _mm_setr_epi8(0, 1, 2, 3, 4, 5, 6, 7, 1, 2, 3, 4, 5, 6, 7, 8),
-    );
-    let ctx_in = _mm256_broadcastsi128_si256(ctx_in_128);
-    let tbl1 = _mm256_setr_epi32(
-        0x00000000,
-        0x00100110,
-        0x00000000,
-        0x00000000,
-        0x43533432,
-        0x39383376,
-        0xbbbbbbbbu32 as i32,
-        0x37a688bb,
-    );
-    let tbl2 = _mm256_setr_epi32(
-        0xddcdddc3u32 as i32,
-        0xcdddddcdu32 as i32,
-        0xddcdddddu32 as i32,
-        0x33736ddd,
-        0xffefffe3u32 as i32,
-        0xefffffefu32 as i32,
-        0xffefffffu32 as i32,
-        0x03736fff,
-    );
-    let ctx_in_div2 =
-        _mm256_and_si256(_mm256_srli_epi16::<1>(ctx_in), _mm256_set1_epi8(0b01111111));
-    let ctx_lookup = _mm256_blendv_epi8(
-        _mm256_shuffle_epi8(tbl1, ctx_in_div2),
-        _mm256_shuffle_epi8(tbl2, ctx_in_div2),
-        _mm256_slli_epi16::<1>(ctx_in),
-    );
-    let high_nibble = _mm256_cmpeq_epi8(
-        _mm256_and_si256(ctx_in, _mm256_set1_epi8(1)),
-        _mm256_set1_epi8(1),
-    );
-    let ctx_lookup = _mm256_and_si256(
-        _mm256_blendv_epi8(ctx_lookup, _mm256_srli_epi16::<4>(ctx_lookup), high_nibble),
-        _mm256_set1_epi8(0xF),
-    );
-    let ctx0_low_div4 = _mm_blendv_epi8(
-        _mm256_extracti128_si256::<0>(ctx_lookup),
-        _mm256_extracti128_si256::<1>(ctx_lookup),
-        _mm_slli_epi16::<2>(ctx_in_128),
-    );
-    let ctx0_to_ctx1_low = _mm_setr_epi8(0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 3, 3);
-    let ctx1_low = _mm_shuffle_epi8(ctx0_to_ctx1_low, ctx0_low_div4);
-    let ctx0_low = _mm_slli_epi16::<2>(ctx0_low_div4);
-
-    let ctx0_hi = _mm_or_si128(
-        _mm_and_si128(ctx_in_128, _mm_set1_epi8(1)),
-        _mm_and_si128(_mm_srli_epi16::<5>(ctx_in_128), _mm_set1_epi8(2)),
-    );
-    let ctx1_hi = _mm_and_si128(
-        _mm_cmpgt_epi8(ctx_in_128, _mm_set1_epi8(-33)),
-        _mm_set1_epi8(2),
-    );
-    let ctx0 = _mm_blendv_epi8(ctx0_low, ctx0_hi, ctx_in_128);
-    let ctx1 = _mm_blendv_epi8(ctx1_low, ctx1_hi, ctx_in_128);
-    let ctx = _mm_or_si128(ctx1, _mm_alignr_epi8::<8>(ctx0, ctx0));
-    safe_x86_64::_mm_store_masked_u8(
-        BoundedSlice::new_from_equal_array_mut(context),
-        BoundedUsize::<0>::MAX,
-        ctx,
-    );
-}
-
-#[inline]
-#[target_feature(enable = "sse2,ssse3,sse4.1,avx,avx2")]
 fn compute_hash_at(
     data_slice: &BoundedSlice<u8, INTERIOR_MARGIN>,
     hashes: &mut [BoundedU32<{ TABLE_SIZE - 1 }>; PRECOMPUTE_SIZE],
@@ -418,20 +342,6 @@ fn compute_hash_at(
 }
 
 const TABLE_SIZE: usize = 1 << LOG_TABLE_SIZE;
-
-#[inline]
-#[target_feature(enable = "sse2,ssse3,sse4.1,avx,avx2")]
-fn compute_hash_and_context_at(
-    data_slice: &BoundedSlice<u8, { INTERIOR_MARGIN + CONTEXT_OFFSET }>,
-    context: &mut [BoundedU8<63>; PRECOMPUTE_SIZE],
-    hashes: &mut [BoundedU32<{ TABLE_SIZE - 1 }>; PRECOMPUTE_SIZE],
-) {
-    compute_hash_at(
-        data_slice.offset::<INTERIOR_MARGIN, CONTEXT_OFFSET>(),
-        hashes,
-    );
-    compute_context(data_slice, context);
-}
 
 pub struct HashTable<
     const ENTRY_SIZE: usize,
@@ -493,7 +403,6 @@ impl<
             return 0;
         }
 
-        let mut context = [BoundedU8::constant::<0>(); PRECOMPUTE_SIZE];
         let mut hashes = [BoundedU32::constant::<0>(); PRECOMPUTE_SIZE];
 
         let mut last_dist = 0;
@@ -504,20 +413,14 @@ impl<
 
         let mut last_distances = [0; 2];
 
-        debug_assert!(start >= CONTEXT_OFFSET);
-
         let mut skip = 0;
         for pos in start..end {
             let data_slice =
-                BoundedSlice::<_, { INTERIOR_MARGIN + CONTEXT_OFFSET }>::new_at_offset(
-                    data,
-                    pos - CONTEXT_OFFSET,
-                )
-                .unwrap();
+                BoundedSlice::<_, { INTERIOR_MARGIN }>::new_at_offset(data, pos).unwrap();
 
             let po = BoundedUsize::<{ PRECOMPUTE_SIZE / 2 - 1 }>::new_masked(pos - start);
             if po.get() == 0 {
-                compute_hash_and_context_at(data_slice, &mut context, &mut hashes);
+                compute_hash_at(data_slice, &mut hashes);
             }
 
             self.prefetch_pos(
@@ -526,8 +429,7 @@ impl<
                 .into(),
             );
 
-            let (chunk1, chunk2, chunk3) =
-                get_chunks(data_slice.offset::<INTERIOR_MARGIN, CONTEXT_OFFSET>());
+            let (chunk1, chunk2, chunk3) = get_chunks(data_slice);
             let hash = (*BoundedSlice::new_from_equal_array(&hashes).get(po)).into();
             let table = BoundedSlice::new_from_equal_array_mut(&mut self.table).get_mut(hash);
             let replacement_idx =
@@ -557,9 +459,7 @@ impl<
                         gain,
                     )
                 };
-                let lit = *data_slice.get(BoundedUsize::<{ CONTEXT_OFFSET + 1 }>::constant::<
-                    CONTEXT_OFFSET,
-                >());
+                let lit = *data_slice.get(BoundedUsize::<0>::MAX);
 
                 let (lit_params, copy_params) = if has_lazy && gain <= last_gain + GAIN_FOR_LAZY {
                     let val = ((0, false), (last_len, last_dist, true));
@@ -614,15 +514,11 @@ impl<
         let skip_end = end_upper_bound.min(end + skip as usize);
         for pos in end..skip_end {
             let data_slice =
-                BoundedSlice::<_, { INTERIOR_MARGIN + CONTEXT_OFFSET }>::new_at_offset(
-                    data,
-                    pos - CONTEXT_OFFSET,
-                )
-                .unwrap();
+                BoundedSlice::<_, { INTERIOR_MARGIN }>::new_at_offset(data, pos).unwrap();
 
             let po = BoundedUsize::<{ PRECOMPUTE_SIZE / 2 - 1 }>::new_masked(pos - start);
             if po.get() == 0 {
-                compute_hash_and_context_at(data_slice, &mut context, &mut hashes);
+                compute_hash_at(data_slice, &mut hashes);
             }
 
             self.prefetch_pos(
@@ -631,8 +527,7 @@ impl<
                 .into(),
             );
 
-            let (chunk1, chunk2, chunk3) =
-                get_chunks(data_slice.offset::<INTERIOR_MARGIN, CONTEXT_OFFSET>());
+            let (chunk1, chunk2, chunk3) = get_chunks(data_slice);
             let hash = (*BoundedSlice::new_from_equal_array(&hashes).get(po)).into();
             let table = BoundedSlice::new_from_equal_array_mut(&mut self.table).get_mut(hash);
             let replacement_idx =
@@ -672,14 +567,6 @@ impl<
         // TODO(veluca): for some reason, not enabling target features on this function results in
         // slightly faster code.
         let mut bpos = start;
-        if bpos == 0 {
-            metablock_data.add_literal(data[0], true);
-            bpos += 1;
-            if bpos < data.len() {
-                metablock_data.add_literal(data[1], true);
-                bpos += 1;
-            }
-        }
         bpos += self.parse_and_emit_interior::<MIN_GAIN_FOR_GREEDY, USE_LAST_DISTANCES>(
             data,
             bpos,

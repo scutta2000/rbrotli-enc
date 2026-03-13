@@ -33,10 +33,8 @@ use zerocopy::{transmute, transmute_mut, AsBytes, FromZeroes};
 use crate::constants::*;
 
 #[derive(Debug, Clone, Copy, AsBytes, FromZeroes)]
-#[repr(C)]
-struct Literal {
-    value: u8,
-}
+#[repr(transparent)]
+pub struct Literal(u8);
 
 #[derive(Clone, Copy, Debug)]
 struct LiteralHistogram {
@@ -99,7 +97,7 @@ impl MetablockData {
 
     #[inline]
     pub fn add_literal(&mut self, value: u8, do_add: bool) {
-        self.literals[self.total_literals as usize] = Literal { value };
+        self.literals[self.total_literals as usize] = Literal(value);
         self.total_literals += if do_add { 1 } else { 0 };
     }
 
@@ -415,7 +413,7 @@ impl MetablockData {
 
         for lit in &self.literals[..self.total_literals as usize] {
             let histo = BoundedSlice::new_from_equal_array_mut(&mut lit_hist.data);
-            *histo.get_mut(BoundedUsize::from_u8(lit.value)) += 1;
+            *histo.get_mut(BoundedUsize::from_u8(lit.0)) += 1;
         }
         lit_hist.total = lit_hist.data.iter().copied().sum::<u32>();
 

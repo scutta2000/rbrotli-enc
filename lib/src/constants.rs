@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::compress::Literal;
+
 // File format choices.
 pub const METABLOCK_SIZE: usize = 1 << 22;
 pub const WBITS: usize = 24;
@@ -29,13 +31,13 @@ pub const LOG_MAX_DIST: i32 = 6;
 pub const MAX_DIST: usize = 1 << LOG_MAX_DIST;
 
 // Metablock-level buffers
-pub const LITERAL_BUF_SIZE: usize = METABLOCK_SIZE + 128;
+pub const LITERAL_BUF_SIZE: usize = METABLOCK_SIZE + (std::mem::size_of::<Literal>() * 128);
 pub const ICD_BUF_SIZE: usize = METABLOCK_SIZE / 4 + 128;
 
 // Using a larger buffer here allows speeding up a few bound checks. The memory overhead is
 // limited.
 pub const SYMBOL_BUF_LIMIT: usize = 1 << 24;
-pub const SYMBOL_BUF_SIZE: usize = SYMBOL_BUF_LIMIT + 16;
+pub const SYMBOL_BUF_SIZE: usize = SYMBOL_BUF_LIMIT + (std::mem::size_of::<Literal>() * 16);
 const _: () = assert!(ICD_BUF_SIZE * 6 + LITERAL_BUF_SIZE <= SYMBOL_BUF_SIZE);
 
 // Encoding for symbol writing
