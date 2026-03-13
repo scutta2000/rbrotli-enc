@@ -498,8 +498,7 @@ mod test {
                     last_distance,
                     second_last_distance,
                 );
-                let adj_sym = sym as u16
-                    + (SYMBOL_MASK + DIST_BASE);
+                let adj_sym = sym as u16 + (SYMBOL_MASK + DIST_BASE);
                 assert_eq!(adj_sym as u32, distance_sym_buf[i]);
                 assert_eq!(bits, distance_bits_buf[i]);
                 assert_eq!(
