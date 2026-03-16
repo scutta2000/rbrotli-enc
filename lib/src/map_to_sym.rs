@@ -190,7 +190,6 @@ pub fn insert_copy_len_to_sym_and_bits_simd<const SLICE_BOUND: usize, const INDE
     bits_buf: &mut [u64; 8],
     nbits_pat_buf: &mut [u64; 8],
     nbits_count_buf: &mut [u32; 8],
-    distance_ctx_buf: &mut [u32; 8],
 ) {
     const ZERO: BoundedUsize<0> = BoundedUsize::MAX;
     const FOUR: BoundedUsize<4> = BoundedUsize::MAX;
@@ -198,11 +197,6 @@ pub fn insert_copy_len_to_sym_and_bits_simd<const SLICE_BOUND: usize, const INDE
     let insert_len = safe_x86_64::_mm256_load(insert, index);
     let (insert_code, insert_nbits, insert_bits) = insert_len_to_sym_and_bits_simd(insert_len);
     let copy_len = safe_x86_64::_mm256_load(copy, index);
-    safe_x86_64::_mm256_store(
-        BoundedSlice::new_from_equal_array_mut(distance_ctx_buf),
-        ZERO,
-        _mm256_abs_epi32(_mm256_cmpgt_epi32(copy_len, _mm256_set1_epi32(4))),
-    );
 
     let (copy_code, copy_nbits, copy_bits) = copy_len_to_sym_and_bits_simd(copy_len);
 
@@ -343,7 +337,6 @@ pub fn distance_to_sym_and_bits_simd<
 >(
     distance: &BoundedSlice<u32, SLICE_BOUND>,
     pos: BoundedUsize<INDEX_BOUND>,
-    distance_ctx_buf: &[u32; 8],
     sym_buf: &mut [u32; 8],
     bits_buf: &mut [u32; 8],
     nbits_pat_buf: &mut [u32; 8],
@@ -397,15 +390,7 @@ pub fn distance_to_sym_and_bits_simd<
 
     const ZERO: BoundedUsize<0> = BoundedUsize::MAX;
 
-    let shifted_ctx = _mm256_slli_epi32::<LOG_MAX_DIST>(safe_x86_64::_mm256_load(
-        BoundedSlice::new_from_equal_array(distance_ctx_buf),
-        ZERO,
-    ));
-
-    let code = _mm256_add_epi32(
-        _mm256_add_epi32(_mm256_set1_epi32((SYMBOL_MASK + DIST_BASE) as i32), code),
-        shifted_ctx,
-    );
+    let code = _mm256_add_epi32(_mm256_set1_epi32((SYMBOL_MASK + DIST_BASE) as i32), code);
 
     let last_mask = _mm256_or_si256(last_matches, second_last_matches);
     let bits = _mm256_andnot_si256(last_mask, bits);
@@ -465,7 +450,6 @@ mod test {
     #[safe_arch_entrypoint("sse2", "avx", "avx2")]
     fn test_distance_simd() {
         let mut distances = [0u32; 1024];
-        let distance_ctx_buf = [0, 1, 0, 1, 0, 1, 0, 1];
         let mut distance_bits_buf = [0; 8];
         let mut distance_nbits_pat_buf = [0; 8];
         let mut distance_nbits_count_buf = [0; 8];
@@ -498,7 +482,6 @@ mod test {
             distance_to_sym_and_bits_simd::<1024, 0, 2>(
                 BoundedSlice::new_from_array(&distances),
                 BoundedUsize::MAX,
-                &distance_ctx_buf,
                 &mut distance_sym_buf,
                 &mut distance_bits_buf,
                 &mut distance_nbits_pat_buf,
@@ -515,9 +498,7 @@ mod test {
                     last_distance,
                     second_last_distance,
                 );
-                let adj_sym = sym as u16
-                    + (SYMBOL_MASK + DIST_BASE)
-                    + distance_ctx_buf[i] as u16 * MAX_DIST as u16;
+                let adj_sym = sym as u16 + (SYMBOL_MASK + DIST_BASE);
                 assert_eq!(adj_sym as u32, distance_sym_buf[i]);
                 assert_eq!(bits, distance_bits_buf[i]);
                 assert_eq!(
@@ -540,7 +521,6 @@ mod test {
         let mut bits_buf = [0; 8];
         let mut nbits_pat_buf = [0; 8];
         let mut nbits_count_buf = [0; 8];
-        let mut distance_ctx_buf = [0; 8];
 
         let step = if cfg!(miri) { 8 * 1000 } else { 8 };
 
@@ -564,7 +544,6 @@ mod test {
                     &mut bits_buf,
                     &mut nbits_pat_buf,
                     &mut nbits_count_buf,
-                    &mut distance_ctx_buf,
                 );
                 for x in 0..8 {
                     let (sym, nbits, bits) = insert_copy_len_to_sym_and_bits(insert[x], copy[x]);
@@ -574,7 +553,6 @@ mod test {
                         get_nbits(nbits_pat_buf[x], nbits_count_buf[x])
                     );
                     assert_eq!(bits, bits_buf[x]);
-                    assert_eq!(if copy[x] <= 4 { 0 } else { 1 }, distance_ctx_buf[x])
                 }
             }
         }
