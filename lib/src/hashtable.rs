@@ -80,7 +80,7 @@ struct HashTableEntry<const ENTRY_SIZE: usize, const TABLE_SIZE_MINUS_ONE: usize
 fn longest_match(data: &[u8], pos1: u32, pos2: usize) -> usize {
     let pos1 = pos1 as usize;
     let max = (data.len() - pos2.max(pos1) - INTERIOR_MARGIN).min(MAX_COPY_LEN);
-    let mut i = 4; // We already know 4 bytes match from the table hash.
+    let mut i = 0;
     while i + 64 <= max {
         // TODO(veluca): the bound checks here cause a slight-but-measurable slowdown (<1%).
         // In principle, they could be avoided.
@@ -233,13 +233,16 @@ fn table_search<
             continue;
         }
         let hpos = *BoundedSlice::new_from_equal_array(&table.pos).get(i);
-
         debug_assert!(
             pos <= u32::MAX as usize,
             "pos ({}) is too large to fit in u32",
             pos
         );
-        debug_assert!(pos as u32 <= hpos, "pos <= hpos: {pos} <= {hpos}",);
+        //This means that the table entry has not been filled yet
+        if pos as u32 <= hpos {
+            return (0, 0, 0);
+        }
+
         let dist = pos as u32 - hpos;
         let len = longest_match(data, hpos, pos) as u32;
         let gain = gain_from_len_and_dist::<USE_LAST_DISTANCES>(len, dist, last_distances);
