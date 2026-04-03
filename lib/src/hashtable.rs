@@ -233,14 +233,9 @@ fn table_search<
             continue;
         }
         let hpos = *BoundedSlice::new_from_equal_array(&table.pos).get(i);
-        debug_assert!(
-            pos <= u32::MAX as usize,
-            "pos ({}) is too large to fit in u32",
-            pos
-        );
-        //This means that the table entry has not been filled yet
-        if pos as u32 <= hpos {
-            return (0, 0, 0);
+        // This means that the table entry has not been filled yet or it's too old.
+        if pos as u32 <= hpos || pos as u32 - hpos > WSIZE as u32 {
+            continue;
         }
 
         let dist = pos as u32 - hpos;
