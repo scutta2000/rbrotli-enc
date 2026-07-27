@@ -12,6 +12,9 @@ zerocopy = { version = "0.7.32", features = ["derive"] }
 bounded-utils = { path = "../bounded-utils" }
 safe-arch-macro = { path = "../safe-arch-macro" }
 
+[features]
+hash_stats = []
+
 [dev-dependencies]
 criterion = "0.5.1"
 

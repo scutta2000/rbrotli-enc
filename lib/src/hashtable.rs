@@ -15,7 +15,7 @@
 use crate::compress::MetablockData;
 use crate::constants::*;
 use bounded_utils::safe_x86_64;
-use bounded_utils::{BoundedIterable, BoundedSlice, BoundedU32, BoundedU8, BoundedUsize};
+use bounded_utils::{BoundedSlice, BoundedU32, BoundedU8, BoundedUsize};
 use hugepage_buffer::BoxedHugePageArray;
 use std::arch::x86_64::*;
 use zerocopy::FromZeroes;
@@ -31,10 +31,6 @@ const LD_OFF: i32 = 150;
 
 const INTERIOR_MARGIN: usize = 32;
 
-fn hash(data: u32) -> u32 {
-    data.wrapping_mul(0x1E35A7BD) >> (32 - LOG_TABLE_SIZE)
-}
-
 #[inline]
 fn fill_entry_inner<
     const ENTRY_SIZE: usize,
@@ -42,7 +38,7 @@ fn fill_entry_inner<
     const TABLE_SIZE_MINUS_ONE: usize,
 >(
     pos: usize,
-    secondary_hash: BoundedUsize<TABLE_SIZE_MINUS_ONE>,
+    secondary_hash: u8,
     table: &mut HashTableEntry<ENTRY_SIZE, TABLE_SIZE_MINUS_ONE>,
     ridx: &mut BoundedU8<ENTRY_SIZE>,
 ) {
@@ -56,8 +52,7 @@ fn fill_entry_inner<
     };
     *ridx = idx.mod_add(1).add::<ENTRY_SIZE, 1>();
     *BoundedSlice::new_from_equal_array_mut(&mut table.pos).get_mut(idx.into()) = pos as u32;
-    *BoundedSlice::new_from_equal_array_mut(&mut table.secondary_hash).get_mut(idx.into()) =
-        secondary_hash;
+    table.secondary_hash[usize::from(idx.get())] = secondary_hash;
 
     // debug_assert!(
     //     pos < ENTRY_SIZE,
@@ -72,7 +67,7 @@ fn fill_entry_inner<
 struct HashTableEntry<const ENTRY_SIZE: usize, const TABLE_SIZE_MINUS_ONE: usize> {
     pos: [u32; ENTRY_SIZE],
     /// Secondary hash of the same data, used to limit conflicts
-    secondary_hash: [BoundedUsize<TABLE_SIZE_MINUS_ONE>; ENTRY_SIZE],
+    secondary_hash: [u8; ENTRY_SIZE],
 }
 
 #[inline]
@@ -80,12 +75,16 @@ struct HashTableEntry<const ENTRY_SIZE: usize, const TABLE_SIZE_MINUS_ONE: usize
 fn longest_match(data: &[u8], pos1: u32, pos2: usize) -> usize {
     let pos1 = pos1 as usize;
     let max = (data.len() - pos2.max(pos1) - INTERIOR_MARGIN).min(MAX_COPY_LEN);
+
+    let d1 = &data[pos1..pos1 + max];
+    let d2 = &data[pos2..pos2 + max];
+
     let mut i = 0;
     while i + 64 <= max {
-        // TODO(veluca): the bound checks here cause a slight-but-measurable slowdown (<1%).
-        // In principle, they could be avoided.
-        let slice1 = BoundedSlice::<_, 64>::new(&data[pos1 + i..]).unwrap();
-        let slice2 = BoundedSlice::<_, 64>::new(&data[pos2 + i..]).unwrap();
+        // The compiler knows i + 64 <= d1.len() because d1.len() == max.
+        // So the slicing below has no bounds checks.
+        let slice1 = BoundedSlice::<_, 64>::new(&d1[i..i + 64]).unwrap();
+        let slice2 = BoundedSlice::<_, 64>::new(&d2[i..i + 64]).unwrap();
 
         let data1a = safe_x86_64::_mm256_load(slice1, BoundedUsize::<0>::MAX);
         let data2a = safe_x86_64::_mm256_load(slice2, BoundedUsize::<0>::MAX);
@@ -103,7 +102,7 @@ fn longest_match(data: &[u8], pos1: u32, pos2: usize) -> usize {
         i += 64;
     }
     while i < max {
-        if data[pos1 + i] != data[pos2 + i] {
+        if d1[i] != d2[i] {
             return i;
         }
         i += 1;
@@ -132,83 +131,44 @@ fn gain_from_len_and_dist<const USE_LAST_DISTANCES: bool>(
 
 #[inline]
 #[target_feature(enable = "avx,avx2")]
-fn gain_from_len_and_dist_simd<const USE_LAST_DISTANCES: bool>(
-    len: __m256i,
-    dist: __m256i,
-    ld0: __m256i,
-    ld1: __m256i,
-) -> __m256i {
-    let distance_penalty = _mm256_add_epi32(
-        _mm256_slli_epi32::<DIST_SHIFT>(_mm256_ilog2_epi32(dist)),
-        _mm256_set1_epi32(GAIN_OFF),
-    );
-
-    let is_last_distance = if USE_LAST_DISTANCES {
-        _mm256_cmpgt_epi32(
-            _mm256_set1_epi32(LD_MAXDIFF),
-            _mm256_min_epi32(
-                _mm256_abs_epi32(_mm256_sub_epi32(dist, ld0)),
-                _mm256_abs_epi32(_mm256_sub_epi32(dist, ld1)),
-            ),
-        )
-    } else {
-        _mm256_setzero_si256()
-    };
-
-    _mm256_sub_epi32(
-        _mm256_mullo_epi32(len, _mm256_set1_epi32(LEN_MULT)),
-        _mm256_blendv_epi8(
-            distance_penalty,
-            _mm256_set1_epi32(LD_OFF),
-            is_last_distance,
-        ),
-    )
-}
-
-#[inline]
-#[target_feature(enable = "avx,avx2")]
-#[allow(clippy::too_many_arguments)]
-fn update_with_long_matches<
-    const ENTRY_SIZE: usize,
-    const TABLE_SIZE_MINUS_ONE: usize,
-    const USE_LAST_DISTANCES: bool,
->(
-    data: &[u8],
-    pos: usize,
-    table: &mut HashTableEntry<ENTRY_SIZE, TABLE_SIZE_MINUS_ONE>,
-    last_distances: [u32; 2],
-    mut len12p_mask: u64,
-    mut d: u32,
-    mut l: u32,
-    mut g: i32,
-) -> (u32, u32, i32) {
-    while len12p_mask > 0 {
-        let p = len12p_mask.trailing_zeros() as usize;
-        len12p_mask &= len12p_mask - 1;
-        let len = longest_match(data, table.pos[p], pos) as u32;
-        let dist = pos as u32 - table.pos[p];
-        let gain = gain_from_len_and_dist::<USE_LAST_DISTANCES>(len, dist, last_distances);
-        if gain > g {
-            (d, l, g) = (dist, len, gain);
-        }
-    }
-    (d, l, g)
-}
-
-#[inline]
-fn get_chunks<const SIZE: usize>(data_slice: &BoundedSlice<u8, SIZE>) -> (u32, u32, u32) {
-    let chunk1 = u32::from_le_bytes(*data_slice.get_array(BoundedUsize::<0>::MAX));
-    let chunk2 = u32::from_le_bytes(*data_slice.get_array(BoundedUsize::<4>::MAX));
-    let chunk3 = u32::from_le_bytes(*data_slice.get_array(BoundedUsize::<8>::MAX));
-    (chunk1, chunk2, chunk3)
-}
-
-#[inline]
-#[target_feature(enable = "avx,avx2")]
 fn _mm256_ilog2_epi32(x: __m256i) -> __m256i {
     let float = _mm256_castps_si256(_mm256_cvtepi32_ps(x));
     _mm256_sub_epi32(_mm256_srli_epi32::<23>(float), _mm256_set1_epi32(127))
 }
+
+#[cfg(feature = "hash_stats")]
+thread_local! {
+    pub static TOTAL_SEARCH_STEPS: std::cell::Cell<u64> = std::cell::Cell::new(0);
+    pub static FALSE_POSITIVES: std::cell::Cell<u64> = std::cell::Cell::new(0);
+    pub static SKIPPED_WITH_SECOND_HASH: std::cell::Cell<u64> = std::cell::Cell::new(0);
+    pub static MATCH_FOUND: std::cell::Cell<u64> = std::cell::Cell::new(0);
+}
+
+#[cfg(feature = "hash_stats")]
+pub fn print_stats() {
+    let total = TOTAL_SEARCH_STEPS.with(|c| c.get());
+    let false_pos = FALSE_POSITIVES.with(|c| c.get());
+    let matches = MATCH_FOUND.with(|c| c.get());
+    let skipped_with_second_hash = SKIPPED_WITH_SECOND_HASH.with(|c| c.get());
+
+    println!("\n--- Match Finder Stats ---");
+    println!("Total hash matches (iterations): {}", total);
+    println!("False Positives (Hash match, but 0 length): {}", false_pos);
+    println!(
+        "Skipped conflicts using second hash: {}",
+        skipped_with_second_hash
+    );
+    println!("Matches Found (> 0 length): {}", matches);
+    if total > 0 {
+        println!(
+            "False Positive Rate: {:.2}%",
+            (false_pos as f64 / total as f64) * 100.0
+        );
+    }
+}
+
+#[cfg(not(feature = "hash_stats"))]
+pub fn print_stats() {}
 
 #[inline]
 #[target_feature(enable = "avx,avx2")]
@@ -220,7 +180,7 @@ fn table_search<
 >(
     data: &[u8],
     pos: usize,
-    secondary_hash: BoundedUsize<TABLE_SIZE_MINUS_ONE>,
+    secondary_hash: u8,
     table: &mut HashTableEntry<ENTRY_SIZE, TABLE_SIZE_MINUS_ONE>,
     last_distances: [u32; 2],
 ) -> (u32, u32, i32) {
@@ -228,11 +188,27 @@ fn table_search<
     let mut best_len = 0;
     let mut best_gain = 0;
 
-    for i in BoundedUsize::<ENTRY_SIZE_MINUS_ONE>::riter(0, ENTRY_SIZE, 1) {
-        if secondary_hash != *BoundedSlice::new_from_equal_array(&table.secondary_hash).get(i) {
-            continue;
-        }
-        let hpos = *BoundedSlice::new_from_equal_array(&table.pos).get(i);
+    let mut mask = if ENTRY_SIZE <= 16 {
+        let target_sec = _mm_set1_epi8(secondary_hash as i8);
+        let sec_bytes = safe_x86_64::_mm_load_u8_array(&table.secondary_hash);
+        let matches = _mm_cmpeq_epi8(target_sec, sec_bytes);
+        let mask16 = _mm_movemask_epi8(matches) as u32;
+        mask16 & ((1u32 << ENTRY_SIZE) - 1)
+    } else {
+        let target_sec = _mm256_set1_epi8(secondary_hash as i8);
+        let sec_bytes = safe_x86_64::_mm256_load_u8_array(&table.secondary_hash);
+        let matches = _mm256_cmpeq_epi8(target_sec, sec_bytes);
+        _mm256_movemask_epi8(matches) as u32
+    };
+
+    while mask != 0 {
+        let i = mask.trailing_zeros() as usize;
+        mask &= mask - 1;
+
+        #[cfg(feature = "hash_stats")]
+        TOTAL_SEARCH_STEPS.with(|c| c.set(c.get() + 1));
+
+        let hpos = table.pos[i];
         // This means that the table entry has not been filled yet or it's too old.
         if pos as u32 <= hpos || pos as u32 - hpos > WSIZE as u32 {
             continue;
@@ -240,6 +216,16 @@ fn table_search<
 
         let dist = pos as u32 - hpos;
         let len = longest_match(data, hpos, pos) as u32;
+
+        #[cfg(feature = "hash_stats")]
+        {
+            if len == 0 {
+                FALSE_POSITIVES.with(|c| c.set(c.get() + 1));
+            } else {
+                MATCH_FOUND.with(|c| c.set(c.get() + 1));
+            }
+        }
+
         let gain = gain_from_len_and_dist::<USE_LAST_DISTANCES>(len, dist, last_distances);
         if gain > best_gain {
             best_gain = gain;
@@ -257,7 +243,7 @@ const PRECOMPUTE_SIZE: usize = 16;
 fn compute_hashes_at(
     data_slice: &BoundedSlice<u8, INTERIOR_MARGIN>,
     hashes1: &mut [BoundedU32<{ TABLE_SIZE - 1 }>; PRECOMPUTE_SIZE],
-    hashes2: &mut [BoundedU32<{ TABLE_SIZE - 1 }>; PRECOMPUTE_SIZE],
+    hashes2: &mut [BoundedU8<255>; 16],
 ) {
     const _: () = assert!(PRECOMPUTE_SIZE == 16);
     let hash_mul_1 = _mm256_set1_epi32(0x1E35A7BD);
@@ -286,8 +272,8 @@ fn compute_hashes_at(
     let h1_0 = _mm256_srli_epi32::<SHIFT>(_mm256_mullo_epi32(data0, hash_mul_1));
     let h1_1 = _mm256_srli_epi32::<SHIFT>(_mm256_mullo_epi32(data1, hash_mul_1));
 
-    let h2_0 = _mm256_srli_epi32::<SHIFT>(_mm256_mullo_epi32(data0, hash_mul_2));
-    let h2_1 = _mm256_srli_epi32::<SHIFT>(_mm256_mullo_epi32(data1, hash_mul_2));
+    let h2_0 = _mm256_srli_epi32::<24>(_mm256_mullo_epi32(data0, hash_mul_2));
+    let h2_1 = _mm256_srli_epi32::<24>(_mm256_mullo_epi32(data1, hash_mul_2));
 
     {
         let hashes = BoundedSlice::new_from_equal_array_mut(hashes1);
@@ -295,9 +281,14 @@ fn compute_hashes_at(
         safe_x86_64::_mm256_store_masked_u32(hashes, BoundedUsize::<8>::MAX, h1_1);
     }
     {
+        // Combine the two 256-bit registers (each containing 8 u32 hashes in the low byte of each lane)
+        // into a single 128-bit register containing all 16 u8 hashes.
+        let h2_0_128 = _mm256_castsi256_si128(_mm256_packus_epi32(h2_0, h2_0));
+        let h2_1_128 = _mm256_castsi256_si128(_mm256_packus_epi32(h2_1, h2_1));
+        let h2_packed = _mm_packus_epi16(h2_0_128, h2_1_128);
+
         let hashes = BoundedSlice::new_from_equal_array_mut(hashes2);
-        safe_x86_64::_mm256_store_masked_u32(hashes, BoundedUsize::<0>::MAX, h2_0);
-        safe_x86_64::_mm256_store_masked_u32(hashes, BoundedUsize::<8>::MAX, h2_1);
+        safe_x86_64::_mm_store_masked_u8(hashes, BoundedUsize::<0>::MAX, h2_packed);
     }
 
     if cfg!(debug_assertions) {
@@ -315,7 +306,7 @@ fn compute_hashes_at(
             let data = u32::from_le_bytes(
                 *data_slice.get_array(BoundedUsize::<PRECOMPUTE_SIZE>::new(i).unwrap()),
             );
-            let basic_hash = data.wrapping_mul(0x5BD1E995) >> (32 - LOG_TABLE_SIZE);
+            let basic_hash = (data.wrapping_mul(0x5BD1E995) >> 24) as u8;
             debug_assert_eq!(h.get(), basic_hash);
         }
     }
@@ -385,7 +376,7 @@ impl<
         }
 
         let mut primary_hashes = [BoundedU32::constant::<0>(); PRECOMPUTE_SIZE];
-        let mut secondary_hashes = [BoundedU32::constant::<0>(); PRECOMPUTE_SIZE];
+        let mut secondary_hashes = [BoundedU8::constant::<0>(); 16];
 
         let mut last_dist = 0;
         let mut last_len = 0;
@@ -413,7 +404,7 @@ impl<
 
             let hash = (*BoundedSlice::new_from_equal_array(&primary_hashes).get(po)).into();
             let secondary_hash =
-                (*BoundedSlice::new_from_equal_array(&secondary_hashes).get(po)).into();
+                (*BoundedSlice::new_from_equal_array(&secondary_hashes).get(po)).get();
             let table = BoundedSlice::new_from_equal_array_mut(&mut self.table).get_mut(hash);
             let replacement_idx =
                 BoundedSlice::new_from_equal_array_mut(&mut self.replacement_idx).get_mut(hash);
@@ -497,7 +488,7 @@ impl<
 
             let hash = (*BoundedSlice::new_from_equal_array(&primary_hashes).get(po)).into();
             let secondary_hash =
-                (*BoundedSlice::new_from_equal_array(&secondary_hashes).get(po)).into();
+                (*BoundedSlice::new_from_equal_array(&secondary_hashes).get(po)).get();
             let table = BoundedSlice::new_from_equal_array_mut(&mut self.table).get_mut(hash);
             let replacement_idx =
                 BoundedSlice::new_from_equal_array_mut(&mut self.replacement_idx).get_mut(hash);
@@ -567,7 +558,7 @@ impl<
         }
 
         let mut primary_hashes = [BoundedU32::constant::<0>(); PRECOMPUTE_SIZE];
-        let mut secondary_hashes = [BoundedU32::constant::<0>(); PRECOMPUTE_SIZE];
+        let mut secondary_hashes = [BoundedU8::constant::<0>(); 16];
 
         let mut last_pc = 1;
 
@@ -597,7 +588,7 @@ impl<
 
             let hash = (*BoundedSlice::new_from_equal_array(&primary_hashes).get(po)).into();
             let secondary_hash =
-                (*BoundedSlice::new_from_equal_array(&secondary_hashes).get(po)).into();
+                (*BoundedSlice::new_from_equal_array(&secondary_hashes).get(po)).get();
             let table = BoundedSlice::new_from_equal_array_mut(&mut self.table).get_mut(hash);
             let replacement_idx =
                 BoundedSlice::new_from_equal_array_mut(&mut self.replacement_idx).get_mut(hash);
@@ -623,7 +614,7 @@ impl<
                 const _: () = assert!(PREFETCH_OFFSET <= 4);
                 for i in 1..PREFETCH_OFFSET {
                     let hash = primary_hashes[po.get() + i].into();
-                    let secondary_hash = secondary_hashes[po.get() + i].into();
+                    let secondary_hash = secondary_hashes[po.get() + i].get();
                     let table =
                         BoundedSlice::new_from_equal_array_mut(&mut self.table).get_mut(hash);
                     let replacement_idx =
@@ -683,7 +674,7 @@ impl<
 
 #[cfg(test)]
 mod test {
-    use super::{_mm256_ilog2_epi32, gain_from_len_and_dist, gain_from_len_and_dist_simd};
+    use super::_mm256_ilog2_epi32;
     use crate::constants::*;
     use safe_arch_macro::safe_arch_entrypoint;
     use std::arch::x86_64::{_mm256_extract_epi32, _mm256_set1_epi32};
@@ -697,28 +688,6 @@ mod test {
             let simd =
                 _mm256_extract_epi32::<0>(_mm256_ilog2_epi32(_mm256_set1_epi32(i as i32))) as u32;
             assert_eq!(simd, i.ilog2());
-        }
-    }
-
-    #[test]
-    #[safe_arch_entrypoint("avx", "avx2")]
-    fn test_gain() {
-        let step = if cfg!(miri) { 100 } else { 1 };
-
-        for dist in (1u32..1024).step_by(step) {
-            for len in (4u32..2048).step_by(step) {
-                let last_distances = [(dist + len) % 1024, dist.saturating_sub(len) % 1024];
-                let vdist = _mm256_set1_epi32(dist as i32);
-                let vlen = _mm256_set1_epi32(len as i32);
-                let vgain = gain_from_len_and_dist_simd::<true>(
-                    vlen,
-                    vdist,
-                    _mm256_set1_epi32(last_distances[0] as i32),
-                    _mm256_set1_epi32(last_distances[1] as i32),
-                );
-                let gain = gain_from_len_and_dist::<true>(len, dist, last_distances);
-                assert_eq!(_mm256_extract_epi32::<0>(vgain), gain);
-            }
         }
     }
 }

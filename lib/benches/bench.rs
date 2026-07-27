@@ -51,7 +51,10 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                     .sample_size(20)
                     .sampling_mode(criterion::SamplingMode::Flat)
                     .measurement_time(Duration::from_secs(120)),
-                &["enwik8", "large-js-corpus.js"],
+                &[
+                    "enwik8",
+                    // "large-js-corpus.js"
+                ],
                 quality,
             );
         }
@@ -62,7 +65,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                     .sample_size(1000)
                     .measurement_time(Duration::from_secs(60)),
                 &[
-                    "brotlidump.py",
+                    // "brotlidump.py",
                     "jquery-3.7.1.min.js",
                     "bootstrap.min.css",
                     "apple_home.html",
@@ -71,6 +74,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             );
         }
     }
+    rbrotli_enc_lib::hashtable::print_stats();
 }
 
 criterion_group!(benches, criterion_benchmark);

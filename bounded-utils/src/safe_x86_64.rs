@@ -242,3 +242,32 @@ pub fn _mm_safe_prefetch<const STRATEGY: i32, T>(r: &T) {
         }
     }
 }
+
+#[inline]
+#[target_feature(enable = "sse2")]
+pub fn _mm_load_u8_array<const N: usize>(data: &[u8; N]) -> __m128i {
+    if N >= 16 {
+        // SAFETY: N >= 16 so reading 16 bytes from data is safe.
+        unsafe { _mm_loadu_si128(data.as_ptr() as *const _) }
+    } else {
+        let mut buf = [0u8; 16];
+        buf[..N].copy_from_slice(data);
+        // SAFETY: buf has length 16.
+        unsafe { _mm_loadu_si128(buf.as_ptr() as *const _) }
+    }
+}
+
+#[inline]
+#[target_feature(enable = "avx")]
+pub fn _mm256_load_u8_array<const N: usize>(data: &[u8; N]) -> __m256i {
+    if N >= 32 {
+        // SAFETY: N >= 32 so reading 32 bytes from data is safe.
+        unsafe { _mm256_loadu_si256(data.as_ptr() as *const _) }
+    } else {
+        let mut buf = [0u8; 32];
+        buf[..N].copy_from_slice(data);
+        // SAFETY: buf has length 32.
+        unsafe { _mm256_loadu_si256(buf.as_ptr() as *const _) }
+    }
+}
+

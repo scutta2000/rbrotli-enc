@@ -16,7 +16,7 @@
 
 mod compress;
 mod constants;
-mod hashtable;
+pub mod hashtable;
 mod huffman;
 mod map_to_sym;
 mod metablock;
